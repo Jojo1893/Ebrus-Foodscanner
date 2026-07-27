@@ -370,8 +370,9 @@
           <option value="vegetarian">Vegetarisch</option>
           <option value="halal">Halal</option>
           <option value="kosher">Koscher</option>
+          <option value="verytest">Verytest-Unverträglichkeiten (Ebru)</option>
         </select>
-        <div class="hint">Bei Halal/Koscher sind die Daten oft unvollständig — die App gibt hier nur eine grobe Einschätzung anhand der Zutatenliste.</div>
+        <div class="hint" id="dietHint">Bei Halal/Koscher sind die Daten oft unvollständig — die App gibt hier nur eine grobe Einschätzung anhand der Zutatenliste.</div>
       </div>
 
       <div class="group">
@@ -409,6 +410,46 @@ const ALLERGENS = [
 const HALAL_RED_FLAGS = ['schwein','pork','speck','bacon','gelatine','gelatin','alkohol','alcohol','wein','rum','likör','lard','schmalz'];
 const KOSHER_RED_FLAGS = ['schwein','pork','speck','bacon','muschel','shellfish','garnele','shrimp','gelatine','gelatin'];
 
+const VERYTEST_HIGH = [
+  'ahornsirup','maple syrup','akçaağaç şurubu',
+  'kohlrabi','alabaş',
+  'schweinewurst','pork sausage','domuz sosisi','domuz sucuğu',
+  'austernsauce','oyster sauce','istiridye sosu',
+  'kürbiskerne','pumpkin seeds','kabak çekirdeği',
+  'kardamom','cardamom','kakule',
+  'buchweizen','buckwheat','karabuğday',
+  'lammleber','lamb liver','kuzu ciğeri',
+  'portobello','portobello mushroom','portobello mantarı',
+  'sojabohnen','soja','soybeans','soy beans','soy','soya fasulyesi',
+  'süßmais','sweet corn','mısır',
+  'butter','tereyağı',
+  'wildkaninchen','wild rabbit','yabani tavşan',
+  'erdnuss','erdnüsse','peanut','peanuts','yer fıstığı',
+  'grüne paprika','green pepper','green bell pepper','yeşil biber',
+  'grüne bohnen','green beans','yeşil fasulye','taze fasulye'
+];
+const VERYTEST_MEDIUM = [
+  'ananas','pineapple',
+  'pferdefleisch','horse meat','at eti',
+  'maracuja','passionsfrucht','passion fruit','çarkıfelek meyvesi',
+  'sauerrahm','sour cream','ekşi krema',
+  'fruktose','fructose','früktoz','fruktoz',
+  'grapefruit','greyfurt',
+  'kokosöl','coconut oil','hindistan cevizi yağı',
+  'kuhmilch','cow milk',"cow's milk",'inek sütü',
+  'spinat','spinach','ıspanak',
+  'gänsefett','goose fat','kaz yağı',
+  'leinsamen','flaxseed','linseed','keten tohumu',
+  'minze','mint','nane',
+  'rote bete','beetroot','beet','kırmızı pancar',
+  'roquefort','roquefort cheese','rokfor peyniri',
+  'gelbe rübe','yellow carrot','yellow turnip','sarı havuç',
+  'red globe','red globe grapes','red grapes','kırmızı üzüm',
+  'grüne oliven','green olives','yeşil zeytin',
+  'joghurt','yogurt','yoghurt','yoğurt'
+];
+const VERYTEST_ADDITIVES = ['e104','e110','e131','e133','e154','e155','e170','e202','e260','e306','e312','e315','e325','e332','e340','e354','e402','e464','e477','e948','e1105'];
+
 let state = {
   allergens: [],
   diet: 'none',
@@ -416,11 +457,13 @@ let state = {
 };
 
 // ---------- storage helpers ----------
+const STORAGE_KEY = 'ebrus-foodscanner-restrictions';
+
 async function loadState(){
   try{
-    const res = await window.storage.get('restrictions', false);
-    if(res && res.value){
-      state = JSON.parse(res.value);
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if(raw){
+      state = JSON.parse(raw);
     }
   }catch(e){
     // no saved state yet, keep defaults
@@ -428,13 +471,14 @@ async function loadState(){
   renderAllergenChips();
   document.getElementById('dietSelect').value = state.diet || 'none';
   document.getElementById('customIngredients').value = (state.custom||[]).join(', ');
+  updateDietHint();
 }
 
 async function saveState(){
   const confirmEl = document.getElementById('saveConfirm');
   try{
-    const result = await window.storage.set('restrictions', JSON.stringify(state), false);
-    confirmEl.textContent = result ? '✓ Gespeichert' : 'Fehler beim Speichern';
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    confirmEl.textContent = '✓ Gespeichert';
     setTimeout(()=>confirmEl.textContent='', 2200);
   }catch(e){
     confirmEl.textContent = 'Fehler beim Speichern';
@@ -466,15 +510,41 @@ function renderAllergenChips(){
         state.allergens.push(a.key);
       }
       renderAllergenChips();
+      saveState();
     });
     grid.appendChild(chip);
   });
 }
 
-document.getElementById('saveRestrictions').addEventListener('click', ()=>{
+function syncRestrictionsFromForm(){
   state.diet = document.getElementById('dietSelect').value;
   state.custom = document.getElementById('customIngredients').value
     .split(',').map(s=>s.trim().toLowerCase()).filter(Boolean);
+}
+
+const DIET_HINTS = {
+  halal: 'Bei Halal/Koscher sind die Daten oft unvollständig — die App gibt hier nur eine grobe Einschätzung anhand der Zutatenliste.',
+  kosher: 'Bei Halal/Koscher sind die Daten oft unvollständig — die App gibt hier nur eine grobe Einschätzung anhand der Zutatenliste.',
+  verytest: 'Basiert auf einem persönlichen, wissenschaftlich nicht validierten Test (z. B. Haaranalyse). Keine medizinische Diagnose — bei echten Allergien bitte ärztlichen Rat einholen.'
+};
+function updateDietHint(){
+  const hintEl = document.getElementById('dietHint');
+  const diet = document.getElementById('dietSelect').value;
+  hintEl.textContent = DIET_HINTS[diet] || '';
+  hintEl.style.display = DIET_HINTS[diet] ? 'block' : 'none';
+}
+
+document.getElementById('saveRestrictions').addEventListener('click', ()=>{
+  syncRestrictionsFromForm();
+  saveState();
+});
+document.getElementById('dietSelect').addEventListener('change', ()=>{
+  syncRestrictionsFromForm();
+  updateDietHint();
+  saveState();
+});
+document.getElementById('customIngredients').addEventListener('blur', ()=>{
+  syncRestrictionsFromForm();
   saveState();
 });
 
@@ -573,6 +643,7 @@ document.getElementById('manualCode').addEventListener('keydown', (e)=>{
 async function lookupProduct(barcode){
   const area = document.getElementById('resultArea');
   area.innerHTML = '<div class="loading">Suche Produkt ' + escapeHtml(barcode) + ' …</div>';
+  area.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
   try{
     const resp = await fetch('https://world.openfoodfacts.org/api/v2/product/' + encodeURIComponent(barcode) +
@@ -670,8 +741,32 @@ function evaluateProduct({ingredientsText, allergenTags, traceTags, analysisTags
       reasons.push({type:'caution', text:'Keine Zutatenliste vorhanden — ' + (state.diet==='halal'?'Halal':'Koscher') + '-Status kann nicht geprüft werden.'});
       if(level === 'safe') level = 'warn';
     } else {
-      reasons.push({type:'caution', text:'Keine offensichtlichen Auffälligkeiten gefunden, aber diese Einschätzung ist nur ein grober Hinweis, kein Zertifikat.'});
+      reasons.push({type:'ok', text:'Keine problematischen Zutaten für ' + (state.diet==='halal'?'Halal':'Koscher') + ' gefunden.'});
+    }
+  } else if(state.diet === 'verytest'){
+    const additiveHit = VERYTEST_ADDITIVES.find(e => lowerIngredients.includes(e));
+    const highHit = VERYTEST_HIGH.find(f => lowerIngredients.includes(f));
+    const mediumHits = VERYTEST_MEDIUM.filter(f => lowerIngredients.includes(f));
+
+    if(additiveHit){
+      reasons.push({type:'bad', text:'Enthält Zusatzstoff „' + additiveHit.toUpperCase() + '“ (hohe Reaktion laut Test).'});
+      level = 'danger';
+    }
+    if(highHit){
+      reasons.push({type:'bad', text:'Enthält „' + highHit + '“ (hohe Reaktion laut Test).'});
+      level = 'danger';
+    }
+    if(mediumHits.length){
+      reasons.push({type:'caution', text:'Enthält ' + mediumHits.map(m=>'„'+m+'“').join(', ') + ' (mittlere Reaktion — mit Vorsicht).'});
       if(level === 'safe') level = 'warn';
+    }
+    if(!additiveHit && !highHit && !mediumHits.length){
+      if(!ingredientsText){
+        reasons.push({type:'caution', text:'Keine Zutatenliste vorhanden — kann nicht geprüft werden.'});
+        if(level === 'safe') level = 'warn';
+      } else {
+        reasons.push({type:'ok', text:'Keine der Verytest-Zutaten gefunden.'});
+      }
     }
   }
 
